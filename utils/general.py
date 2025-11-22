@@ -20,9 +20,14 @@ import torch
 import torchvision
 import yaml
 
-from utils.google_utils import gsutil_getsize
-from utils.metrics import fitness
 from utils.torch_utils import init_torch_seeds
+
+# Stub functions for compatibility
+def gsutil_getsize(url):
+    return 0
+
+def fitness(x):
+    return x[0] if isinstance(x, (list, tuple)) else x
 
 # Settings
 torch.set_printoptions(linewidth=320, precision=5, profile='long')
@@ -634,7 +639,7 @@ def non_max_suppression_export(prediction, conf_thres=0.25, iou_thres=0.45, clas
 
 def strip_optimizer(f='best.pt', s=''):  # from utils.general import *; strip_optimizer()
     # Strip optimizer from 'f' to finalize training, optionally save as 's'
-    x = torch.load(f, map_location=torch.device('cpu'))
+    x = torch.load(f, map_location=torch.device('cpu'), weights_only=False)
     if x.get('ema'):
         x['model'] = x['ema']  # replace model with ema
     for k in 'optimizer', 'training_results', 'wandb_id', 'ema', 'updates':  # keys

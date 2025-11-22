@@ -1,55 +1,151 @@
-# Emotion Detection Using Yolo-V5 and RepVGG
-This repository uses [Yolo-V5](https://github.com/ultralytics/yolov5) and [RepVGG](https://github.com/DingXiaoH/RepVGG) to detect facial expressions and classify emotions (see the [architecture](#Architecture) for more info on how it works). To see how to use the code, check out the [usage](#usage) section for more information.
-## Example
-This is an example of emotion classification:
-![Example Image](example.png "Example Image")
-This is a picture of me pulling all 8 of the facial expressions that the model classifies:
-![Example Image](emotions.png "Emotions")<br>
-## Setup
-### pip
-`pip install -r requirements.txt`
-### conda
-`conda env create -f env.yaml`
-## Emotions
-This model detects 8 basic facial expressions:
-- anger
-- contempt
-- disgust
-- fear
-- happy
-- neutral
-- sad
-- surprise<br>
-and then attempts to assign them appropriate colours. It classifies every face, even if it is not that confident about the result!
-## Usage
-```
-usage: main.py [-h] [--source SOURCE] [--img-size IMG_SIZE] [--conf-thres CONF_THRES] [--iou-thres IOU_THRES]
-               [--device DEVICE] [--hide-img] [--output-path OUTPUT_PATH | --no-save] [--agnostic-nms] [--augment]
-               [--line-thickness LINE_THICKNESS] [--hide-conf] [--show-fps]
+# Emotion Detection System - Clean & Minimal Setup
 
-optional arguments:
-  -h, --help            show this help message and exit
-  --source SOURCE       source
-  --img-size IMG_SIZE   inference size (pixels)
-  --conf-thres CONF_THRES
-                        face confidence threshold
-  --iou-thres IOU_THRES
-                        IOU threshold for NMS
-  --device DEVICE       cuda device, i.e. 0 or 0,1,2,3 or cpu
-  --hide-img            hide results
-  --output-path OUTPUT_PATH
-                        save location
-  --no-save             do not save images/videos
-  --agnostic-nms        class-agnostic NMS
-  --augment             augmented inference
-  --line-thickness LINE_THICKNESS
-                        bounding box thickness (pixels)
-  --hide-conf           hide confidences
-  --show-fps            print fps to console
+## Overview
+A lightweight face detection and emotion recognition system using:
+- **YOLOv7-tiny** for face detection (37 MB)
+- **RepVGG-A0** for emotion classification (26 MB)
+- **PyTorch 2.7.1** as the deep learning framework
+- **Gradio** for web UI interface
+
+## Project Structure
+
 ```
-## Architecture
-There are two parts to this code: facial detection and emotion classification.
-### Face Detection
-This repository is a fork of [ultralytics/Yolo-V5](https://github.com/ultralytics/yolov5) however, now Yolo-v7 is used for faster detection! Read [here](https://ultralytics.com/yolov5) for more information on Yolo-V5 (original model). To detect faces, the model was trained on the [WIDER FACE](http://shuoyang1213.me/WIDERFACE/) dataset which has 393,703 faces. For more information, check out the paper [here](https://arxiv.org/pdf/1511.06523.pdf).
-### Facial Expression Classification
-This repository uses code directly from the [DingXiaoH/RepVGG](https://github.com/DingXiaoH/RepVGG) repository. You can read the RepVGG paper [here](https://arxiv.org/pdf/2101.03697.pdf) to find out more. Even though this is the main model, it made more sense to fork the Yolo-V5 repository because it was more complicated. The model was trained on the [AffectNet dataset](http://mohammadmahoor.com/affectnet/), which has 420,299 facial expressions. For more information, you can read the paper [here](http://mohammadmahoor.com/wp-content/uploads/2017/08/AffectNet_oneColumn-2.pdf).
+emotion/
+├── main.py              ← Core detection engine
+├── emotion.py           ← Emotion model (RepVGG)
+├── repvgg.py            ← RepVGG architecture
+├── simple_ui.py         ← Gradio web interface
+├── run_webcam.py        ← Webcam detection script
+├── QUICK_START.py       ← Quick start guide
+├── requirements.txt     ← Dependencies
+├── models/              ← YOLOv7 model files
+│   ├── common.py
+│   ├── experimental.py
+│   ├── yolo.py
+│   └── __init__.py
+├── utils/               ← Utility functions
+│   ├── datasets.py
+│   ├── general.py
+│   ├── plots.py
+│   ├── torch_utils.py
+│   └── __init__.py
+└── weights/             ← Pre-trained weights
+    ├── yolov7-tiny.pt   (37 MB - Face detector)
+    └── repvgg.pth       (26 MB - Emotion classifier)
+```
+
+## Quick Start
+
+### 1. Run Gradio Web UI (Best for Sharing)
+```bash
+python simple_ui.py
+```
+Then open: **http://localhost:7860**
+
+### 2. Webcam Real-Time Detection
+```bash
+python main.py --source 0 --show-fps
+```
+
+### 3. Process Single Image
+```bash
+python main.py --source image.jpg --output-path result.jpg
+```
+
+## Supported Emotions (8 Classes)
+😠 Anger | 😒 Contempt | 🤢 Disgust | 😨 Fear | 😊 Happy | 😐 Neutral | 😢 Sad | 😮 Surprise
+
+## Requirements
+- Python 3.8+
+- PyTorch 2.0+
+- OpenCV
+- Gradio
+- NumPy, Pandas
+
+See `requirements.txt` for full dependencies.
+
+## Features
+✅ Real-time face detection and emotion classification  
+✅ Bounding box visualization with emotion labels  
+✅ Web UI for easy sharing  
+✅ Webcam streaming support  
+✅ Image file processing  
+✅ Video stream support  
+✅ FPS counter  
+✅ CPU and GPU support  
+
+## Command-Line Options
+```
+--source SOURCE          Input (0=webcam, image.jpg, video.mp4)
+--img-size SIZE          Inference size (default: 512)
+--conf-thres THRESHOLD   Face confidence threshold (default: 0.5)
+--iou-thres THRESHOLD    IOU threshold for NMS (default: 0.45)
+--device DEVICE          Device (cpu or 0,1,2... for GPU)
+--output-path PATH       Save location
+--show-fps              Show FPS in console
+--hide-conf             Hide confidence scores
+```
+
+## Files Removed During Cleanup
+- Unnecessary image files (.webp, .mp4)
+- Cache folders (__pycache__, .gradio)
+- Unused utility modules (google_utils.py, metrics.py, autoanchor.py)
+- Old UI files (app.py, start_ui.bat, etc.)
+- Documentation (HOW_TO_RUN_UI.txt)
+
+**Result**: Project reduced to ~65 MB (essential files only)
+
+## Running the System
+
+### Option 1: Web UI (Recommended)
+```bash
+cd emotion
+python simple_ui.py
+```
+Access via browser: http://localhost:7860
+
+### Option 2: Command Line
+```bash
+# Webcam detection
+python main.py --source 0
+
+# Image processing
+python main.py --source photo.jpg --output-path result.jpg
+
+# Video processing
+python main.py --source video.mp4 --output-path output.mp4
+```
+
+### Option 3: Quick Start Guide
+```bash
+python QUICK_START.py
+```
+
+## Troubleshooting
+
+**Webcam not working?**
+```bash
+python main.py --source 0 --device cpu
+```
+
+**GPU not available?**
+```bash
+python main.py --source 0 --device cpu
+```
+
+**Port 7860 already in use?**
+Edit `simple_ui.py` and change `server_port=7860` to another port (e.g., 7861)
+
+## Notes
+- Models are loaded on startup for faster inference
+- First run may take longer as models are loaded into memory
+- GPU recommended for real-time webcam detection
+- CPU mode works but will be slower
+
+## License
+Original YOLOv7: https://github.com/WongKinYiu/yolov7  
+RepVGG: https://github.com/DingXiaoH/RepVGG  
+Gradio: https://github.com/gradio-app/gradio
+
+---
+**Cleaned and optimized for production use** ✨

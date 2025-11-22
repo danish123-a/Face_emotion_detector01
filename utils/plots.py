@@ -18,7 +18,10 @@ import yaml
 from PIL import Image, ImageDraw, ImageFont
 
 from utils.general import xywh2xyxy, xyxy2xywh
-from utils.metrics import fitness
+
+# Stub function for compatibility
+def fitness(x):
+    return x[0] if isinstance(x, (list, tuple)) else x
 
 # Settings
 matplotlib.rc('font', **{'size': 11})

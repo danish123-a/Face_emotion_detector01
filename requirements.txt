@@ -29,3 +29,8 @@ pandas
 # pycocotools>=2.0  # COCO mAP
 # albumentations>=1.0.3
 thop  # FLOPs computation
+
+# api -----------------------------------------
+flask>=2.0.0
+requests>=2.26.0
+gradio>=4.0.0

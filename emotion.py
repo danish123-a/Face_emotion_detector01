@@ -16,7 +16,7 @@ def init(device):
     global dev
     dev = device
     model.to(device)
-    model.load_state_dict(torch.load("weights/repvgg.pth"))
+    model.load_state_dict(torch.load("weights/repvgg.pth", weights_only=False))
 
     # Save to eval
     cudnn.benchmark = True

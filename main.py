@@ -18,6 +18,124 @@ from utils.plots import plot_one_box
 from utils.torch_utils import select_device, time_synchronized
 
 
+def detect_emotion_from_image(image_path, device=None, conf_thres=0.5, iou_thres=0.45, img_size=512, show_conf=True):
+    """
+    Detect faces and emotions in a single image.
+    
+    Args:
+        image_path (str): Path to the image file
+        device (str, optional): Device to use ('cpu' or 'cuda'). Defaults to auto-detect
+        conf_thres (float): Face confidence threshold
+        iou_thres (float): IOU threshold for NMS
+        img_size (int): Inference image size
+        show_conf (bool): Whether to show confidence scores
+    
+    Returns:
+        dict: Contains detected emotions and annotated image
+            {
+                'emotions': [{'label': str, 'emotion_idx': int, 'bbox': [x1, y1, x2, y2]}],
+                'image': numpy array of annotated image,
+                'success': bool
+            }
+    """
+    try:
+        # Initialize device
+        if device is None:
+            device = select_device('')
+        
+        # Initialize emotion model
+        init(device)
+        
+        # Load YOLOv7 model for face detection
+        model = attempt_load("weights/yolov7-tiny.pt", map_location=device)
+        stride = int(model.stride.max().item())
+        img_size = check_img_size(img_size, s=stride)
+        half = device.type != 'cpu'
+        
+        if half:
+            model.half()
+        
+        # Load and preprocess image
+        im0 = cv2.imread(image_path)
+        if im0 is None:
+            return {
+                'success': False,
+                'error': f"Could not load image from {image_path}",
+                'emotions': [],
+                'image': None
+            }
+        
+        # Prepare image for inference
+        img = cv2.cvtColor(im0, cv2.COLOR_BGR2RGB)
+        img = cv2.resize(img, (img_size, img_size))
+        img = img.transpose(2, 0, 1)
+        img = np.ascontiguousarray(img)
+        img = torch.from_numpy(img).to(device)
+        img = img.half() if half else img.float()
+        img /= 255.0
+        if img.ndimension() == 3:
+            img = img.unsqueeze(0)
+        
+        # Inference
+        with torch.no_grad():
+            pred = model(img, augment=False)[0]
+            pred = non_max_suppression(pred, conf_thres, iou_thres, agnostic=False)
+        
+        # Process detections
+        emotions_list = []
+        im0_original = cv2.imread(image_path)
+        
+        if len(pred) > 0 and len(pred[0]) > 0:
+            det = pred[0]
+            gn = torch.tensor(im0_original.shape)[[1, 0, 1, 0]]
+            
+            # Rescale boxes
+            det[:, :4] = scale_coords((img_size, img_size), det[:, :4], im0_original.shape).round()
+            
+            # Extract face crops
+            images = []
+            boxes = []
+            for *xyxy, conf, cls in det:
+                x1, y1, x2, y2 = int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])
+                x1, y1, x2, y2 = max(0, x1), max(0, y1), min(im0_original.shape[1], x2), min(im0_original.shape[0], y2)
+                face_crop = im0_original[y1:y2, x1:x2]
+                if face_crop.size > 0:
+                    images.append(cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB))
+                    boxes.append([x1, y1, x2, y2])
+            
+            # Detect emotions
+            if images:
+                emotions = detect_emotion(images, show_conf)
+                for i, (emotion_label, emotion_idx) in enumerate(emotions):
+                    emotions_list.append({
+                        'label': emotion_label,
+                        'emotion_idx': emotion_idx,
+                        'bbox': boxes[i]
+                    })
+                    
+                    # Draw on image
+                    x1, y1, x2, y2 = boxes[i]
+                    colors = ((0,52,255),(121,3,195),(176,34,118),(87,217,255),(69,199,79),(233,219,155),(203,139,77),(214,246,255))
+                    color = colors[emotion_idx % len(colors)]
+                    cv2.rectangle(im0_original, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(im0_original, emotion_label, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+        
+        return {
+            'success': True,
+            'emotions': emotions_list,
+            'image': im0_original,
+            'error': None
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'emotions': [],
+            'image': None
+        }
+
+
 def detect(opt):
     source, view_img, imgsz, nosave, show_conf, save_path, show_fps = opt.source, not opt.hide_img, opt.img_size, opt.no_save, not opt.hide_conf, opt.output_path, opt.show_fps
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
@@ -33,7 +151,7 @@ def detect(opt):
 
     # Load model
     model = attempt_load("weights/yolov7-tiny.pt", map_location=device)  # load FP32 model
-    stride = int(model.stride.max())  # model stride
+    stride = int(model.stride.max().item())  # model stride
     imgsz = check_img_size(imgsz, s=stride)  # check img_size
     if half:
         model.half()  # to FP16
@@ -49,6 +167,8 @@ def detect(opt):
 
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
+    if isinstance(names, dict):
+        names = list(names.values())
     colors = ((0,52,255),(121,3,195),(176,34,118),(87,217,255),(69,199,79),(233,219,155),(203,139,77),(214,246,255))
 
     # Run inference
@@ -77,52 +197,63 @@ def detect(opt):
             else:
                 p, s, im0, frame = path, '', im0s.copy(), getattr(dataset, 'frame', 0)
 
+            if isinstance(p, list):
+                p = p[0] if p else 'image'
             p = Path(p)  # to Path
             s += '%gx%g ' % img.shape[2:]  # print string
+            
+            # Type guard and assertion for im0
+            if im0 is None or not isinstance(im0, np.ndarray):
+                continue
+            
+            # type: ignore
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             if len(det):
                 # Rescale boxes from img_size to im0 size
+                # type: ignore
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
                 # Print results
                 for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()  # detections per class
-                    s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
+                    try:
+                        if isinstance(names, (list, tuple)):
+                            name = names[int(c)]
+                        else:
+                            name = str(names)
+                        s += f"{n} {name}{'s' * (n > 1)}, "  # add to string
+                    except (IndexError, TypeError):
+                        pass
                 images = []
 
                 for *xyxy, conf, cls in reversed(det):
-                    #xyxy = [[x, y, w, h] for x, y, w, h in xyxy]
-                   # xyxy = np.array(xyxy)
-                    #xyxy = np.array(xyxy)
-                   # xyxy = xyxy.tolist()
-                    #x1, y1, x2, y2 = zip(*xyxy)
-
                     x1, y1, x2, y2 = xyxy[0], xyxy[1], xyxy[2], xyxy[3]
-                   # x1, y1, x2, y2 = xyxy[:,:4]
-
+                    # type: ignore
                     images.append(im0.astype(np.uint8)[int(y1):int(y2), int(x1): int(x2)])
                 
+                emotions = []
                 if images:
                     emotions = detect_emotion(images,show_conf)
                 # Write results
-                i = 0
-                #for *xyxy, conf, cls in reversed(det):
-                #for *xyxy, conf, cls in det[::-1]:
+                idx = 0
                 for *xyxy, conf, cls in reversed(det):
-                    if view_img or not nosave:  
+                    if (view_img or not nosave) and idx < len(emotions):
                         # Add bbox to image with emotions on 
-                        label = emotions[i][0]
-                        colour = colors[emotions[i][1]]
-                        i += 1
+                        label = emotions[idx][0]
+                        colour = colors[emotions[idx][1]]
+                        idx += 1
+                        # type: ignore
                         plot_one_box(xyxy, im0, label=label, color=colour, line_thickness=opt.line_thickness)
 
 
             # Stream results
-            if view_img:
-                display_img = cv2.resize(im0, (im0.shape[1]*2,im0.shape[0]*2))
+            if view_img and isinstance(im0, np.ndarray):
+                # type: ignore
+                display_img = cv2.resize(im0, (int(im0.shape[1]*2), int(im0.shape[0]*2)))
                 cv2.imshow("Emotion Detection",display_img)
-                cv2.waitKey(1)  # 1 millisecond
-            if not nosave:
+                if cv2.waitKey(0) == ord('q'):  # q to quit
+                    break 
+            if not nosave and isinstance(im0, np.ndarray):
                 # check what the output format is
                 ext = save_path.split(".")[-1]
                 if ext in ["mp4","avi"]:
@@ -136,17 +267,29 @@ def detect(opt):
                             w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                             h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                         else:  # stream
+                            # type: ignore
                             fps, w, h = 30, im0.shape[1], im0.shape[0]
-                        vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                    vid_writer.write(im0)
+                        try:
+                            # type: ignore
+                            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                        except (AttributeError, TypeError):
+                            # Fallback: use integers directly for mp4v codec
+                            fourcc = int(ord('m')) | (int(ord('p')) << 8) | (int(ord('4')) << 16) | (int(ord('v')) << 24)
+                        vid_writer = cv2.VideoWriter(save_path, fourcc, fps, (w, h))
+                    if vid_writer is not None:
+                        # type: ignore
+                        vid_writer.write(im0)
                 elif ext in ["bmp", "pbm", "pgm", "ppm", "sr", "ras", "jpeg", "jpg", "jpe", "jp2", "tiff", "tif", "png"]:
                     # save image
-                    cv2.imwrite(save_path,im0)
+                    # type: ignore
+                    cv2.imwrite(save_path, im0)
                 else:
                     # save to folder
-                    output_path = os.path.join(save_path,os.path.split(path)[1])
+                    path_str = str(p) if isinstance(p, Path) else p
+                    output_path = os.path.join(save_path, os.path.basename(path_str))
                     create_folder(output_path)
-                    cv2.imwrite(output_path,im0)
+                    # type: ignore
+                    cv2.imwrite(output_path, im0)
 
         if show_fps:
             # calculate and display fps
@@ -156,7 +299,7 @@ def detect(opt):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--source', type=str, default='0', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--source', type=str, default='0', help='--source')  # file/folder, 0 for webcam
     parser.add_argument('--img-size', type=int, default=512, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='face confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='IOU threshold for NMS')
