@@ -251,8 +251,7 @@ def detect(opt):
                 # type: ignore
                 display_img = cv2.resize(im0, (int(im0.shape[1]*2), int(im0.shape[0]*2)))
                 cv2.imshow("Emotion Detection",display_img)
-                if cv2.waitKey(0) == ord('q'):  # q to quit
-                    break 
+                
             if not nosave and isinstance(im0, np.ndarray):
                 # check what the output format is
                 ext = save_path.split(".")[-1]
